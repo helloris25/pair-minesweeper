@@ -1,3 +1,5 @@
+import { toApiUrl } from '@/config';
+
 export interface CreateGameParams {
   gridSize: number;
   diamondsCount: number;
@@ -20,7 +22,7 @@ async function parseErrorMessage(res: Response): Promise<string> {
 }
 
 export async function createGame(params: CreateGameParams): Promise<{ gameId: string }> {
-  const res = await fetch('/games', {
+  const res = await fetch(toApiUrl('/games'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
