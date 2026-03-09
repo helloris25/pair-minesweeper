@@ -17,11 +17,19 @@ import { GameConfigService } from './config/game-config.service';
 
 @Injectable()
 export class LobbyService {
+  private lobbyListDirty = true;
+  private cachedLobbyList: AvailableGameInfo[] = [];
+
   constructor(
     @Inject(GAME_REPOSITORY) private readonly gameRepository: GameRepository,
     @Inject(BOARD_GENERATOR) private readonly boardGenerator: IBoardGenerator,
     private readonly gameConfig: GameConfigService,
   ) {}
+
+  /** Call when the set of waiting games may have changed (so next listAvailableGames recomputes). */
+  invalidateLobbyCache(): void {
+    this.lobbyListDirty = true;
+  }
 
   /** Creates a new game with the given parameters and stores it. */
   createGame(
@@ -29,14 +37,15 @@ export class LobbyService {
     diamondsCount: Game['diamondsCount'],
     turnTimeSeconds: Game['turnTimeSeconds'],
   ): Game {
-    const cfg = this.gameConfig.get();
-    const { maxPlayers } = cfg;
+    const config = this.gameConfig.getConfig();
+    const { maxPlayers } = config;
 
-    const isParamsOutOfRange = gridSize < cfg.gridSizeMin ||
-    gridSize > cfg.gridSizeMax ||
-    diamondsCount < cfg.diamondsCountMin ||
-    turnTimeSeconds < cfg.turnTimeSecondsMin ||
-    turnTimeSeconds > cfg.turnTimeSecondsMax;
+    const isParamsOutOfRange =
+      gridSize < config.gridSizeMin ||
+      gridSize > config.gridSizeMax ||
+      diamondsCount < config.diamondsCountMin ||
+      turnTimeSeconds < config.turnTimeSecondsMin ||
+      turnTimeSeconds > config.turnTimeSecondsMax;
 
     if (isParamsOutOfRange) {
       throw new BadRequestException('Game parameters out of allowed range');
@@ -50,7 +59,7 @@ export class LobbyService {
 
     const gameId = uuidv4();
     const board = this.boardGenerator.generateBoard(gridSize, diamondsCount);
-    const game = this.createGameEntity({
+    const game = this.buildGameEntity({
       gameId,
       gridSize,
       diamondsCount,
@@ -58,22 +67,27 @@ export class LobbyService {
       board,
     });
     this.gameRepository.set(gameId, game);
+    this.invalidateLobbyCache();
     return game;
   }
 
-  getGame(gameId: Game['id']): Game | undefined {
+  getGameById(gameId: Game['id']): Game | undefined {
     return this.gameRepository.get(gameId);
   }
 
   /** Lists games waiting for a second player; removes expired non-playing games. */
   listAvailableGames(): AvailableGameInfo[] {
+    if (!this.lobbyListDirty) {
+      return this.cachedLobbyList;
+    }
+
     const now = Date.now();
     const result: AvailableGameInfo[] = [];
     const maxGameAgeMs = this.gameConfig.maxGameAgeMs;
 
     for (const [gameId, game] of this.gameRepository.getEntries()) {
       const age = now - game.createdAt.getTime();
-      
+
       const isExpired = age > maxGameAgeMs && game.status !== GAME_STATUS.playing;
       if (isExpired) {
         this.gameRepository.delete(gameId);
@@ -91,6 +105,9 @@ export class LobbyService {
         });
       }
     }
+
+    this.cachedLobbyList = result;
+    this.lobbyListDirty = false;
     return result;
   }
 
@@ -107,7 +124,7 @@ export class LobbyService {
     if (!game) {
       return null;
     }
-    const { maxPlayers } = this.gameConfig.get();
+    const { maxPlayers } = this.gameConfig.getConfig();
     if (game.players.size >= maxPlayers) {
       return null;
     }
@@ -117,10 +134,12 @@ export class LobbyService {
 
     game.players.set(socketId, playerNumber);
     game.playerTokens.set(playerToken, playerNumber);
+    this.gameRepository.registerSocket(socketId, gameId, playerNumber);
 
     const gameStarted = game.playerTokens.size === maxPlayers;
     if (gameStarted) {
       game.status = GAME_STATUS.playing;
+      this.invalidateLobbyCache();
     }
 
     return { playerNumber, playerToken, gameStarted };
@@ -133,11 +152,13 @@ export class LobbyService {
     }
 
     this.gameRepository.delete(gameId);
+    this.invalidateLobbyCache();
     return true;
   }
 
   deleteGame(gameId: Game['id']): void {
     this.gameRepository.delete(gameId);
+    this.invalidateLobbyCache();
   }
 
   getSocketIdsForGame(gameId: Game['id']): SocketId[] {
@@ -148,7 +169,7 @@ export class LobbyService {
     return Array.from(game.players.keys());
   }
 
-  private createGameEntity(params: {
+  private buildGameEntity(params: {
     gameId: Game['id'];
     gridSize: Game['gridSize'];
     diamondsCount: Game['diamondsCount'];
@@ -175,7 +196,6 @@ export class LobbyService {
       turnStartedAt: null,
       turnTimer: null,
       turnTimeRemainingMs: null,
-      disconnectTimers: new Map(),
     };
   }
 }

@@ -7,22 +7,11 @@ import {
   SocketId,
 } from './interfaces/game.interface';
 import { GameRepository, GAME_REPOSITORY } from './interfaces/game-repository.interface';
-import { GameConfigService } from './config/game-config.service';
+import { getMapKeyByValue } from './utils/map.util';
 
 @Injectable()
 export class SessionService {
-  private onDisconnectTimeoutCallback:
-    | ((gameId: Game['id'], playerNumber: PlayerNumber) => void)
-    | null = null;
-
-  constructor(
-    @Inject(GAME_REPOSITORY) private readonly gameRepository: GameRepository,
-    private readonly gameConfig: GameConfigService,
-  ) {}
-
-  setOnDisconnectTimeout(cb: (gameId: Game['id'], playerNumber: PlayerNumber) => void): void {
-    this.onDisconnectTimeoutCallback = cb;
-  }
+  constructor(@Inject(GAME_REPOSITORY) private readonly gameRepository: GameRepository) {}
 
   /** Re-establishes a player in the game by token; returns player number or null. */
   rejoinGame(
@@ -40,54 +29,39 @@ export class SessionService {
       return null;
     }
 
-    const dcTimer = game.disconnectTimers.get(playerNumber);
-    if (dcTimer) {
-      clearTimeout(dcTimer);
-      game.disconnectTimers.delete(playerNumber);
-    }
-
-    for (const [sid, playerNum] of game.players) {
-      if (playerNum === playerNumber) {
-        game.players.delete(sid);
-        break;
-      }
+    const oldSocketId = getMapKeyByValue(game.players, playerNumber);
+    if (oldSocketId !== undefined) {
+      game.players.delete(oldSocketId);
+      this.gameRepository.unregisterSocket(oldSocketId);
     }
 
     game.players.set(socketId, playerNumber);
+    this.gameRepository.registerSocket(socketId, gameId, playerNumber);
     return playerNumber;
   }
 
   /**
-   * Called on socket disconnect. Schedules a delayed forfeit for playing games.
-   * Returns info for the gateway to notify the opponent.
+   * Called on socket disconnect. Removes the socket from the game; the player slot
+   * remains (they can rejoin by token). Game ends only when the turn timer expires.
    */
   handlePlayerDisconnect(socketId: SocketId): {
     gameId: Game['id'];
     playerNumber: PlayerNumber;
   } | null {
-    const found = this.gameRepository.findGameAndPlayerBySocketId(socketId);
-    if (!found) {
+    const gameAndPlayer = this.gameRepository.findGameAndPlayerBySocketId(socketId);
+    if (!gameAndPlayer) {
       return null;
     }
 
-    const { gameId, game, playerNumber } = found;
+    const { gameId, game, playerNumber } = gameAndPlayer;
     game.players.delete(socketId);
+    this.gameRepository.unregisterSocket(socketId);
 
     const isWaitingGameWithNoPlayersLeft =
       game.status === GAME_STATUS.waiting && game.players.size === 0;
     if (isWaitingGameWithNoPlayersLeft) {
       this.gameRepository.delete(gameId);
       return { gameId, playerNumber };
-    }
-
-    if (game.status === GAME_STATUS.playing) {
-      const timer = setTimeout(() => {
-        game.disconnectTimers.delete(playerNumber);
-        if (this.onDisconnectTimeoutCallback) {
-          this.onDisconnectTimeoutCallback(gameId, playerNumber);
-        }
-      }, this.gameConfig.get().reconnectTimeoutMs);
-      game.disconnectTimers.set(playerNumber, timer);
     }
 
     return { gameId, playerNumber };

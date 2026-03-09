@@ -5,6 +5,35 @@ export type PlayerNumber = FirstPlayer | SecondPlayer;
 export const FIRST_PLAYER = 1 as const satisfies FirstPlayer;
 export const SECOND_PLAYER = 2 as const satisfies SecondPlayer;
 
+export type ErrorCode =
+  | 'JOIN_NOT_FOUND'
+  | 'JOIN_FINISHED'
+  | 'JOIN_ALREADY_STARTED'
+  | 'JOIN_CANNOT_JOIN'
+  | 'JOIN_CANNOT_REJOIN'
+  | 'CANCEL_FAILED'
+  | 'GAME_NOT_FOUND'
+  | 'GAME_NOT_IN_PROGRESS'
+  | 'NOT_IN_GAME'
+  | 'NOT_YOUR_TURN'
+  | 'INVALID_CELL'
+  | 'CELL_ALREADY_REVEALED';
+
+export const ERROR_CODE = {
+  JOIN_NOT_FOUND: 'JOIN_NOT_FOUND',
+  JOIN_FINISHED: 'JOIN_FINISHED',
+  JOIN_ALREADY_STARTED: 'JOIN_ALREADY_STARTED',
+  JOIN_CANNOT_JOIN: 'JOIN_CANNOT_JOIN',
+  JOIN_CANNOT_REJOIN: 'JOIN_CANNOT_REJOIN',
+  CANCEL_FAILED: 'CANCEL_FAILED',
+  GAME_NOT_FOUND: 'GAME_NOT_FOUND',
+  GAME_NOT_IN_PROGRESS: 'GAME_NOT_IN_PROGRESS',
+  NOT_IN_GAME: 'NOT_IN_GAME',
+  NOT_YOUR_TURN: 'NOT_YOUR_TURN',
+  INVALID_CELL: 'INVALID_CELL',
+  CELL_ALREADY_REVEALED: 'CELL_ALREADY_REVEALED',
+} as const satisfies Record<ErrorCode, ErrorCode>;
+
 export interface Cell {
   hasDiamond: boolean;
   adjacentDiamonds: number;
@@ -42,8 +71,6 @@ export interface Game {
   turnTimer: ReturnType<typeof setTimeout> | null;
   /** Tracks remaining turn time in ms when timer is paused (disconnect) */
   turnTimeRemainingMs: number | null;
-  /** Pending disconnect timers: playerNumber → timeout handle */
-  disconnectTimers: Map<PlayerNumber, ReturnType<typeof setTimeout>>;
 }
 
 /** Board state sent to clients — hides diamond positions for unrevealed cells */
@@ -100,10 +127,12 @@ export type OpenCellResult =
       revealed: CellRevealedPayload;
       gameOver?: GameOverPayload;
     }
-  | { ok: false; error: string };
+  | { ok: false; error: ErrorCode };
 
 /** Result of surrenderGame: either success with game over payload or an error message */
-export type SurrenderResult = { ok: true; payload: GameOverPayload } | { ok: false; error: string };
+export type SurrenderResult =
+  | { ok: true; payload: GameOverPayload }
+  | { ok: false; error: ErrorCode };
 
 export interface AvailableGameInfo {
   id: Game['id'];

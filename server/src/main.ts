@@ -5,7 +5,8 @@ import { AppModule } from './app.module';
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_HOST = '0.0.0.0';
-const DEFAULT_CORS_ORIGIN = 'http://localhost:5173';
+/** Allow both common Vite dev ports when CORS_ORIGIN is not set. */
+const DEFAULT_CORS_ORIGINS = ['http://localhost:5173', 'http://localhost:5174'];
 
 function parsePort(value: string | undefined): number {
   if (value === undefined || value === '') {
@@ -21,7 +22,10 @@ async function bootstrap() {
 
   const port = parsePort(config.get<string>('PORT'));
   const host = config.get<string>('HOST') ?? DEFAULT_HOST;
-  const corsOrigin = config.get<string>('CORS_ORIGIN') ?? DEFAULT_CORS_ORIGIN;
+  const corsOriginEnv = config.get<string>('CORS_ORIGIN');
+  const corsOrigin = corsOriginEnv
+    ? corsOriginEnv.split(',').map((s) => s.trim()).filter(Boolean)
+    : DEFAULT_CORS_ORIGINS;
 
   app.enableCors({
     origin: corsOrigin,

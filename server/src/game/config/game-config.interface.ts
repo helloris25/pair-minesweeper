@@ -2,7 +2,6 @@
 export const GAME_CONFIG_DEFAULTS = {
   maxPlayers: 2,
   gameAgeMinutes: 10,
-  reconnectTimeoutMs: 30_000,
   lobbyRoom: 'lobby',
   gridSizeMin: 2,
   gridSizeMax: 6,
@@ -15,7 +14,6 @@ export const GAME_CONFIG_DEFAULTS = {
 export interface GameConfig {
   maxPlayers: number;
   gameAgeMinutes: number;
-  reconnectTimeoutMs: number;
   lobbyRoom: string;
   gridSizeMin: number;
   gridSizeMax: number;

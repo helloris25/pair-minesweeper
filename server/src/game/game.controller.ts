@@ -11,12 +11,12 @@ export class GameController {
   ) {}
 
   @Get()
-  list() {
+  getGamesList() {
     return this.lobbyService.listAvailableGames();
   }
 
   @Post()
-  create(@Body() dto: CreateGameDto) {
+  createGame(@Body() dto: CreateGameDto) {
     const game = this.lobbyService.createGame(dto.gridSize, dto.diamondsCount, dto.turnTimeSeconds);
     this.gameGateway.broadcastLobby();
     return { gameId: game.id };

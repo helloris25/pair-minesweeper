@@ -2,13 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GameConfig, GAME_CONFIG_DEFAULTS } from './game-config.interface';
 
-function parseIntEnv(value: string | undefined, fallback: number): number {
+function parseIntegerFromEnv(value: string | undefined, fallback: number): number {
   if (value === undefined || value === '') {
     return fallback;
   }
 
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
+  const parsedValue = Number.parseInt(value, 10);
+  return Number.isNaN(parsedValue) ? fallback : parsedValue;
 }
 
 @Injectable()
@@ -19,47 +19,43 @@ export class GameConfigService {
     const defaults = GAME_CONFIG_DEFAULTS;
 
     this.config = {
-      maxPlayers: parseIntEnv(
+      maxPlayers: parseIntegerFromEnv(
         this.configService.get<string>('GAME_MAX_PLAYERS'),
         defaults.maxPlayers,
       ),
-      gameAgeMinutes: parseIntEnv(
+      gameAgeMinutes: parseIntegerFromEnv(
         this.configService.get<string>('GAME_AGE_MINUTES'),
         defaults.gameAgeMinutes,
       ),
-      reconnectTimeoutMs: parseIntEnv(
-        this.configService.get<string>('GAME_RECONNECT_TIMEOUT_MS'),
-        defaults.reconnectTimeoutMs,
-      ),
       lobbyRoom: this.configService.get<string>('GAME_LOBBY_ROOM') ?? defaults.lobbyRoom,
-      gridSizeMin: parseIntEnv(
+      gridSizeMin: parseIntegerFromEnv(
         this.configService.get<string>('GAME_GRID_SIZE_MIN'),
         defaults.gridSizeMin,
       ),
-      gridSizeMax: parseIntEnv(
+      gridSizeMax: parseIntegerFromEnv(
         this.configService.get<string>('GAME_GRID_SIZE_MAX'),
         defaults.gridSizeMax,
       ),
-      diamondsCountMin: parseIntEnv(
+      diamondsCountMin: parseIntegerFromEnv(
         this.configService.get<string>('GAME_DIAMONDS_COUNT_MIN'),
         defaults.diamondsCountMin,
       ),
-      turnTimeSecondsMin: parseIntEnv(
+      turnTimeSecondsMin: parseIntegerFromEnv(
         this.configService.get<string>('GAME_TURN_TIME_SECONDS_MIN'),
         defaults.turnTimeSecondsMin,
       ),
-      turnTimeSecondsMax: parseIntEnv(
+      turnTimeSecondsMax: parseIntegerFromEnv(
         this.configService.get<string>('GAME_TURN_TIME_SECONDS_MAX'),
         defaults.turnTimeSecondsMax,
       ),
-      msPerSecond: parseIntEnv(
+      msPerSecond: parseIntegerFromEnv(
         this.configService.get<string>('GAME_MS_PER_SECOND'),
         defaults.msPerSecond,
       ),
     };
   }
 
-  get(): GameConfig {
+  getConfig(): GameConfig {
     return this.config;
   }
 

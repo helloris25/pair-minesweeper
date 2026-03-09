@@ -186,14 +186,23 @@ const timeLeft = computed(() => {
   return Math.max(0, state.turnTimeSeconds - elapsed);
 });
 
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (gameState.value && gameState.value.status !== 'finished') {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+}
+
 onMounted(() => {
   connect();
   tickInterval = setInterval(() => {
     now.value = Date.now();
   }, 250);
+  window.addEventListener('beforeunload', handleBeforeUnload);
 });
 
 onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload);
   if (tickInterval) clearInterval(tickInterval);
   if (copyResetTimer) clearTimeout(copyResetTimer);
 });

@@ -43,6 +43,8 @@ export function useSocket() {
   const playerLeft = ref(false);
   const extraTurn = ref(false);
 
+  /** Game we're currently joining/rejoining; used to clear stale token on unavailable */
+  let lastJoinedGameId: string | null = null;
   let extraTurnTimer: ReturnType<typeof setTimeout> | null = null;
 
   function connect() {
@@ -61,6 +63,7 @@ export function useSocket() {
     socketInstance.on('game:state', (state: GameStatePayload) => {
       gameState.value = state;
       error.value = null;
+      lastJoinedGameId = null;
       storeToken(state.gameId, state.playerToken);
     });
 
@@ -97,6 +100,10 @@ export function useSocket() {
     });
 
     socketInstance.on('game:unavailable', (data: GameErrorPayload) => {
+      if (lastJoinedGameId) {
+        clearToken(lastJoinedGameId);
+        lastJoinedGameId = null;
+      }
       unavailable.value = messageFromPayload(data);
     });
 
@@ -121,6 +128,7 @@ export function useSocket() {
   }
 
   function joinGame(gameId: string) {
+    lastJoinedGameId = gameId;
     const storedToken = getStoredToken(gameId);
     if (storedToken) {
       socket.value?.emit('game:rejoin', { gameId, playerToken: storedToken });

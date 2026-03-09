@@ -12,4 +12,8 @@ export interface GameRepository {
     game: Game;
     playerNumber: PlayerNumber;
   } | null;
+  /** Register socket in the socketId index (call when adding a player to a game). */
+  registerSocket(socketId: SocketId, gameId: Game['id'], playerNumber: PlayerNumber): void;
+  /** Unregister socket from the index (call when removing a player from a game). */
+  unregisterSocket(socketId: SocketId): void;
 }

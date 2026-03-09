@@ -17,6 +17,8 @@ import {
   GAME_STATUS,
   PlayerToken,
   CellRevealedPayload,
+  ERROR_CODE,
+  ErrorCode,
 } from './interfaces/game.interface';
 import {
   GAME_EVENTS,
@@ -28,31 +30,20 @@ import { GameConfigService } from './config/game-config.service';
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
-/** Error codes sent to the client; the client maps them to localized messages. */
-export const ErrorCode = {
-  JOIN_NOT_FOUND: 'JOIN_NOT_FOUND',
-  JOIN_FINISHED: 'JOIN_FINISHED',
-  JOIN_ALREADY_STARTED: 'JOIN_ALREADY_STARTED',
-  JOIN_CANNOT_JOIN: 'JOIN_CANNOT_JOIN',
-  JOIN_CANNOT_REJOIN: 'JOIN_CANNOT_REJOIN',
-  CANCEL_FAILED: 'CANCEL_FAILED',
-  GAME_NOT_FOUND: 'GAME_NOT_FOUND',
-  GAME_NOT_IN_PROGRESS: 'GAME_NOT_IN_PROGRESS',
-  NOT_IN_GAME: 'NOT_IN_GAME',
-  NOT_YOUR_TURN: 'NOT_YOUR_TURN',
-  INVALID_CELL: 'INVALID_CELL',
-  CELL_ALREADY_REVEALED: 'CELL_ALREADY_REVEALED',
-} as const;
-
-/** Maps service error messages to error codes. */
-const SERVICE_ERROR_TO_CODE: Record<string, string> = {
-  'Game not found': ErrorCode.GAME_NOT_FOUND,
-  'Game is not in progress': ErrorCode.GAME_NOT_IN_PROGRESS,
-  'You are not in this game': ErrorCode.NOT_IN_GAME,
-  'Not your turn': ErrorCode.NOT_YOUR_TURN,
-  'Invalid cell coordinates': ErrorCode.INVALID_CELL,
-  'Cell already revealed': ErrorCode.CELL_ALREADY_REVEALED,
-};
+const ERROR_CODE_TO_MESSAGE = {
+  [ERROR_CODE.JOIN_NOT_FOUND]: 'Game not found',
+  [ERROR_CODE.JOIN_FINISHED]: 'Game already finished',
+  [ERROR_CODE.JOIN_ALREADY_STARTED]: 'Game already started',
+  [ERROR_CODE.JOIN_CANNOT_JOIN]: 'Cannot join this game',
+  [ERROR_CODE.JOIN_CANNOT_REJOIN]: 'Cannot rejoin with this token',
+  [ERROR_CODE.CANCEL_FAILED]: 'Failed to cancel game',
+  [ERROR_CODE.GAME_NOT_FOUND]: 'Game not found',
+  [ERROR_CODE.GAME_NOT_IN_PROGRESS]: 'Game is not in progress',
+  [ERROR_CODE.NOT_IN_GAME]: 'You are not in this game',
+  [ERROR_CODE.NOT_YOUR_TURN]: 'Not your turn',
+  [ERROR_CODE.INVALID_CELL]: 'Invalid cell coordinates',
+  [ERROR_CODE.CELL_ALREADY_REVEALED]: 'Cell already revealed',
+} as const satisfies Record<ErrorCode, string>;
 
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
 
@@ -74,61 +65,53 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
   ) {}
 
   afterInit() {
-    this.gameplayService.setOnTurnTimeout((gameId: Game['id']) => {
+    this.gameplayService.setTurnTimeoutCallback((gameId: Game['id']) => {
       const result = this.gameplayService.handleTimeout(gameId);
       if (result) {
         this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, result);
-        this.broadcastLobby();
-      }
-    });
-
-    this.sessionService.setOnDisconnectTimeout((gameId, playerNumber) => {
-      const result = this.gameplayService.forfeitDisconnectedPlayer(gameId, playerNumber);
-      if (result) {
-        this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, result);
-        this.broadcastLobby();
+        this.invalidateAndBroadcastLobby();
       }
     });
   }
 
   @SubscribeMessage(GAME_EVENTS.LOBBY_SUBSCRIBE)
   handleLobbySubscribe(@ConnectedSocket() client: TypedSocket) {
-    client.join(this.gameConfig.get().lobbyRoom);
+    client.join(this.gameConfig.getConfig().lobbyRoom);
     client.emit(GAME_EVENTS.LOBBY_LIST, this.lobbyService.listAvailableGames());
   }
 
   @SubscribeMessage(GAME_EVENTS.LOBBY_UNSUBSCRIBE)
   handleLobbyUnsubscribe(@ConnectedSocket() client: TypedSocket) {
-    client.leave(this.gameConfig.get().lobbyRoom);
+    client.leave(this.gameConfig.getConfig().lobbyRoom);
   }
 
   @SubscribeMessage(GAME_EVENTS.GAME_JOIN)
   handleJoin(@ConnectedSocket() client: TypedSocket, @MessageBody() data: { gameId: Game['id'] }) {
     const { gameId } = data;
-    const game = this.lobbyService.getGame(gameId);
+    const game = this.lobbyService.getGameById(gameId);
 
     if (!game) {
-      client.emit(GAME_EVENTS.GAME_UNAVAILABLE, { code: ErrorCode.JOIN_NOT_FOUND });
+      client.emit(GAME_EVENTS.GAME_UNAVAILABLE, { code: ERROR_CODE.JOIN_NOT_FOUND });
       return;
     }
     if (game.status === GAME_STATUS.finished) {
-      client.emit(GAME_EVENTS.GAME_UNAVAILABLE, { code: ErrorCode.JOIN_FINISHED });
+      client.emit(GAME_EVENTS.GAME_UNAVAILABLE, { code: ERROR_CODE.JOIN_FINISHED });
       return;
     }
     if (game.status === GAME_STATUS.playing) {
       client.emit(GAME_EVENTS.GAME_UNAVAILABLE, {
-        code: ErrorCode.JOIN_ALREADY_STARTED,
+        code: ERROR_CODE.JOIN_ALREADY_STARTED,
       });
       return;
     }
 
     const result = this.lobbyService.joinGame(gameId, client.id);
     if (!result) {
-      client.emit(GAME_EVENTS.GAME_UNAVAILABLE, { code: ErrorCode.JOIN_CANNOT_JOIN });
+      client.emit(GAME_EVENTS.GAME_UNAVAILABLE, { code: ERROR_CODE.JOIN_CANNOT_JOIN });
       return;
     }
 
-    client.leave(this.gameConfig.get().lobbyRoom);
+    client.leave(this.gameConfig.getConfig().lobbyRoom);
     client.join(gameId);
 
     if (result.gameStarted) {
@@ -141,7 +124,7 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
     }
 
     if (result.playerNumber === SECOND_PLAYER) {
-      this.broadcastStateToAll(gameId);
+      this.broadcastGameStateToAllPlayers(gameId);
       this.server.to(gameId).emit(GAME_EVENTS.GAME_PLAYER_JOINED, {
         playerNumber: SECOND_PLAYER,
       });
@@ -164,15 +147,15 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
 
     if (playerNumber === null) {
       client.emit(GAME_EVENTS.GAME_UNAVAILABLE, {
-        code: ErrorCode.JOIN_CANNOT_REJOIN,
+        code: ERROR_CODE.JOIN_CANNOT_REJOIN,
       });
       return;
     }
 
-    client.leave(this.gameConfig.get().lobbyRoom);
+    client.leave(this.gameConfig.getConfig().lobbyRoom);
     client.join(gameId);
 
-    this.broadcastStateToAll(gameId);
+    this.broadcastGameStateToAllPlayers(gameId);
     this.server.to(gameId).emit(GAME_EVENTS.GAME_PLAYER_RECONNECTED, {
       playerNumber,
     });
@@ -187,7 +170,7 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
     const cancelled = this.lobbyService.cancelGame(gameId, client.id);
 
     if (!cancelled) {
-      client.emit(GAME_EVENTS.GAME_ERROR, { code: ErrorCode.CANCEL_FAILED });
+      client.emit(GAME_EVENTS.GAME_ERROR, { code: ERROR_CODE.CANCEL_FAILED });
       return;
     }
 
@@ -210,14 +193,14 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
     const result = this.gameplayService.openCell(gameId, client.id, row, col);
 
     if (!result.ok) {
-      const code = SERVICE_ERROR_TO_CODE[result.error] ?? ErrorCode.GAME_NOT_FOUND;
-      client.emit(GAME_EVENTS.GAME_ERROR, { code, message: result.error });
+      this.emitGameError(client, { ok: false, error: result.error });
       return;
     }
 
     this.server.to(gameId).emit(GAME_EVENTS.GAME_UPDATE, result.revealed);
     if (result.gameOver) {
       this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, result.gameOver);
+      this.invalidateAndBroadcastLobby();
     }
   }
 
@@ -230,34 +213,44 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
     const result = this.gameplayService.surrenderGame(gameId, client.id);
 
     if (!result.ok) {
-      const code = SERVICE_ERROR_TO_CODE[result.error] ?? ErrorCode.GAME_NOT_FOUND;
-      client.emit(GAME_EVENTS.GAME_ERROR, { code, message: result.error });
+      this.emitGameError(client, result);
       return;
     }
 
     this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, result.payload);
-    this.broadcastLobby();
+    this.invalidateAndBroadcastLobby();
   }
 
   handleDisconnect(client: TypedSocket) {
-    const removed = this.sessionService.handlePlayerDisconnect(client.id);
-    if (!removed) {
+    const disconnectResult = this.sessionService.handlePlayerDisconnect(client.id);
+    if (!disconnectResult) {
       return;
     }
 
-    this.server.to(removed.gameId).emit(GAME_EVENTS.GAME_PLAYER_LEFT, {
-      playerNumber: removed.playerNumber,
+    this.server.to(disconnectResult.gameId).emit(GAME_EVENTS.GAME_PLAYER_LEFT, {
+      playerNumber: disconnectResult.playerNumber,
     });
-    this.broadcastLobby();
+    // Invalidate lobby cache so deleted games (e.g. only player left) disappear from the list
+    this.invalidateAndBroadcastLobby();
   }
 
   broadcastLobby() {
     this.server
-      .to(this.gameConfig.get().lobbyRoom)
+      .to(this.gameConfig.getConfig().lobbyRoom)
       .emit(GAME_EVENTS.LOBBY_LIST, this.lobbyService.listAvailableGames());
   }
 
-  private broadcastStateToAll(gameId: Game['id']) {
+  private invalidateAndBroadcastLobby(): void {
+    this.lobbyService.invalidateLobbyCache();
+    this.broadcastLobby();
+  }
+
+  private emitGameError(client: TypedSocket, result: { ok: false; error: ErrorCode }): void {
+    const message = ERROR_CODE_TO_MESSAGE[result.error] ?? ERROR_CODE.GAME_NOT_FOUND;
+    client.emit(GAME_EVENTS.GAME_ERROR, { message, code: result.error });
+  }
+
+  private broadcastGameStateToAllPlayers(gameId: Game['id']): void {
     const socketIds = this.lobbyService.getSocketIdsForGame(gameId);
     for (const socketId of socketIds) {
       const state = this.gameplayService.getStateForPlayer(gameId, socketId);

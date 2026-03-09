@@ -1,14 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { Cell, CellRevealedPayload, Game } from './interfaces/game.interface';
 import { IBoardGenerator } from './interfaces/board-generator.interface';
+import { isCellInBounds } from './utils/board.util';
 
 // Смещения соседних ячеек в 8 направлениях (окружающие клетки по кресту и диагоналям)
 // Используется для подсчёта количества алмазов рядом с данной клеткой при генерации поля
 // Сделано, чтобы не писать 8 if-ов для проверки соседних клеток.
 const NEIGHBOR_OFFSETS = [
-  [-1, -1], [-1, 0], [-1, 1],
-  [0, -1],           [0, 1],
-  [1, -1],  [1, 0],  [1, 1],
+  [-1, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, -1],
+  [0, 1],
+  [1, -1],
+  [1, 0],
+  [1, 1],
 ] as const;
 
 @Injectable()
@@ -16,7 +22,7 @@ export class BoardGeneratorService implements IBoardGenerator {
   generateBoard(gridSize: Game['gridSize'], diamondsCount: Game['diamondsCount']): Cell[][] {
     const diamondIndices = this.getDiamondPositions(gridSize, diamondsCount);
     const board = this.buildBoard(gridSize, diamondIndices);
-    
+
     this.fillNeighborDiamondsCount(board, gridSize);
 
     return board;
@@ -31,7 +37,7 @@ export class BoardGeneratorService implements IBoardGenerator {
 
       for (let col = 0; col < gridSize; col++) {
         boardRow.push({
-          hasDiamond: diamondIndices.has(this.toCellIndex(gridSize, row, col)),
+          hasDiamond: diamondIndices.has(this.getCellIndex(gridSize, row, col)),
           adjacentDiamonds: 0,
           revealed: false,
         });
@@ -43,7 +49,6 @@ export class BoardGeneratorService implements IBoardGenerator {
     return board;
   }
 
-
   private getDiamondPositions(
     gridSize: Game['gridSize'],
     diamondsCount: Game['diamondsCount'],
@@ -51,9 +56,9 @@ export class BoardGeneratorService implements IBoardGenerator {
     const totalCells = gridSize * gridSize;
     const indices = Array.from({ length: totalCells }, (_, index) => index);
 
-    for (let idx = indices.length - 1; idx > 0; idx--) {
-      const swapIdx = Math.floor(Math.random() * (idx + 1));
-      [indices[idx], indices[swapIdx]] = [indices[swapIdx], indices[idx]];
+    for (let index = indices.length - 1; index > 0; index--) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [indices[index], indices[swapIndex]] = [indices[swapIndex], indices[index]];
     }
 
     return new Set(indices.slice(0, diamondsCount));
@@ -84,7 +89,7 @@ export class BoardGeneratorService implements IBoardGenerator {
       const neighborRow = row + rowOffset;
       const neighborCol = col + colOffset;
 
-      if (!this.isInsideBoard(gridSize, neighborRow, neighborCol)) {
+      if (!isCellInBounds(gridSize, neighborRow, neighborCol)) {
         continue;
       }
 
@@ -96,15 +101,7 @@ export class BoardGeneratorService implements IBoardGenerator {
     return count;
   }
 
-  private isInsideBoard(
-    gridSize: Game['gridSize'],
-    row: CellRevealedPayload['row'],
-    col: CellRevealedPayload['col'],
-  ): boolean {
-    return row >= 0 && row < gridSize && col >= 0 && col < gridSize;
-  }
-
-  private toCellIndex(
+  private getCellIndex(
     gridSize: Game['gridSize'],
     row: CellRevealedPayload['row'],
     col: CellRevealedPayload['col'],
