@@ -165,6 +165,11 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
 
     this.clearDisconnectTimer(gameId);
 
+    const game = this.lobbyService.getGameById(gameId);
+    if (game?.status === GAME_STATUS.waiting) {
+      this.invalidateAndBroadcastLobby();
+    }
+
     this.broadcastGameStateToAllPlayers(gameId);
     this.server.to(gameId).emit(GAME_EVENTS.GAME_PLAYER_RECONNECTED, {
       playerNumber,
