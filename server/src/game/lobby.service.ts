@@ -93,7 +93,7 @@ export class LobbyService {
       }
 
       const isWaiting = game.status === GAME_STATUS.waiting && age < maxGameAgeMs;
-      if (isWaiting) {
+      if (isWaiting && game.players.size === 1) {
         result.push({
           id: game.id,
           gridSize: game.gridSize,

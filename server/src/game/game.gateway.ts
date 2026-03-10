@@ -230,7 +230,10 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
     const { gameId, playerNumber } = disconnectResult;
     const game = this.lobbyService.getGameById(gameId);
     // Не удаляем игру в ожидании при дисконнекте — хост может вернуться (фон на телефоне, Offline на компе).
-    // Устаревшие игры вычищаются по TTL в listAvailableGames().
+    // Устаревшие игры вычищаются по TTL в listAvailableGames(). Рассылаем список, чтобы пустые игры исчезли у клиентов.
+    if (game?.status === GAME_STATUS.waiting) {
+      this.invalidateAndBroadcastLobby();
+    }
     if (game?.status === GAME_STATUS.playing) {
       this.clearDisconnectTimer(gameId);
       const seconds = this.gameConfig.getConfig().disconnectLossSeconds;
