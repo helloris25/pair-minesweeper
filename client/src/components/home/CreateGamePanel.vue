@@ -32,50 +32,50 @@
     </div>
 
     <form class="form" @submit.prevent="onSubmit">
-      <label class="field">
+      <div class="field">
         <span class="field-label">Размер поля</span>
-        <input
-          v-model.number="gridSize"
-          type="number"
-          min="2"
-          max="6"
-          required
-          aria-describedby="field-size-hint"
-        />
-        <small id="field-size-hint" class="field-hint"
-          >Сетка {{ gridSize }}×{{ gridSize }} (от 2×2 до 6×6)</small
-        >
-      </label>
+        <div class="chip-row" role="group" aria-label="Размер поля">
+          <button
+            v-for="n in GRID_SIZE_OPTIONS"
+            :key="n"
+            type="button"
+            class="chip-btn"
+            :class="{ active: gridSize === n }"
+            @click="gridSize = n"
+          >
+            {{ n }}×{{ n }}
+          </button>
+        </div>
+      </div>
       <label class="field">
         <span class="field-label">Количество алмазов</span>
-        <input
+        <select
           v-model.number="diamondsCount"
-          type="number"
-          min="1"
-          :max="gridSize * gridSize - 1"
-          step="2"
+          class="field-select"
           required
           aria-describedby="diamonds-hint"
-        />
+        >
+          <option v-for="opt in diamondOptions" :key="opt" :value="opt">{{ opt }} &#x1F48E;</option>
+        </select>
         <small id="diamonds-hint" class="field-hint"
-          >Нечётное число, не больше {{ gridSize * gridSize - 1 }}</small
+          >Не больше {{ gridSize * gridSize - 1 }} для поля {{ gridSize }}×{{ gridSize }}</small
         >
       </label>
-      <label class="field">
-        <span class="field-label">Время на ход, сек</span>
-        <input
-          v-model.number="turnTimeSeconds"
-          type="number"
-          min="5"
-          max="120"
-          step="5"
-          required
-          aria-describedby="time-hint"
-        />
-        <small id="time-hint" class="field-hint"
-          >От 5 до 120 секунд — чем меньше, тем динамичнее</small
-        >
-      </label>
+      <div class="field">
+        <span class="field-label">Время на ход</span>
+        <div class="chip-row" role="group" aria-label="Время на ход">
+          <button
+            v-for="sec in TURN_TIME_OPTIONS"
+            :key="sec"
+            type="button"
+            class="chip-btn"
+            :class="{ active: turnTimeSeconds === sec }"
+            @click="turnTimeSeconds = sec"
+          >
+            {{ sec }} сек
+          </button>
+        </div>
+      </div>
       <p v-if="createError" class="error" role="alert">{{ createError }}</p>
       <button type="submit" class="submit-btn" :disabled="creating">
         <span v-if="creating" class="btn-loading" aria-hidden="true" />
@@ -87,13 +87,18 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import { useCreateGameForm } from '@/composables/useCreateGameForm';
+import {
+  useCreateGameForm,
+  GRID_SIZE_OPTIONS,
+  TURN_TIME_OPTIONS,
+} from '@/composables/useCreateGameForm';
 
 const router = useRouter();
 const {
   gridSize,
   diamondsCount,
   turnTimeSeconds,
+  diamondOptions,
   presetActive,
   creating,
   createError,
@@ -195,10 +200,41 @@ async function onSubmit() {
   color: var(--color-text-dim);
 }
 
-input {
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-btn {
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+}
+
+.chip-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.chip-btn.active {
+  color: var(--color-accent);
+  background: rgba(233, 69, 96, 0.15);
+  border-color: var(--color-accent);
+}
+
+.field-select {
+  min-height: 44px;
   padding: 10px 14px;
   font-size: 1rem;
   color: var(--color-text-primary);
+  cursor: pointer;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -207,7 +243,7 @@ input {
     box-shadow 0.2s ease;
 }
 
-input:focus {
+.field-select:focus {
   outline: 2px solid var(--color-accent);
   outline-offset: -1px;
   border-color: transparent;

@@ -121,6 +121,11 @@ export class LobbyService {
       return null;
     }
 
+    const reattachResult = this.tryReattachFirstPlayerAfterDisconnect(game, socketId, browserId);
+    if (reattachResult !== null) {
+      return reattachResult;
+    }
+
     const replaceResult = this.tryReplaceFirstPlayerSocket(game, socketId, browserId);
     if (replaceResult !== null) {
       return replaceResult;
@@ -149,6 +154,38 @@ export class LobbyService {
     }
 
     return { playerNumber, playerToken, gameStarted };
+  }
+
+  /** Восстановление хоста после дисконнекта (фон/офлайн): в игре 0 игроков, browserId совпадает с первым. */
+  private tryReattachFirstPlayerAfterDisconnect(
+    game: Game,
+    socketId: SocketId,
+    browserId: string | undefined,
+  ): JoinGameResult | null {
+    const isNotWaiting =
+      game.status !== GAME_STATUS.waiting || game.players.size !== 0 || !browserId;
+    if (isNotWaiting) {
+      return null;
+    }
+
+    const playerBrowserIds = game.playerBrowserIds ?? new Map<PlayerNumber, string>();
+    if (playerBrowserIds.get(FIRST_PLAYER) !== browserId) {
+      return null;
+    }
+
+    const existingToken = getMapKeyByValue(game.playerTokens, FIRST_PLAYER);
+    if (existingToken === undefined) {
+      return null;
+    }
+
+    game.players.set(socketId, FIRST_PLAYER);
+    this.gameRepository.registerSocket(socketId, game.id, FIRST_PLAYER);
+
+    return {
+      playerNumber: FIRST_PLAYER,
+      playerToken: existingToken,
+      gameStarted: false,
+    };
   }
 
   private tryReplaceFirstPlayerSocket(

@@ -2,10 +2,20 @@
   <section class="panel lobby-panel">
     <div class="panel-header">
       <h2>Доступные игры</h2>
-      <span class="connection-badge" :class="{ connected: lobbyConnected }">
-        <span class="connection-dot" />
-        {{ lobbyConnected ? 'Онлайн' : 'Подключение...' }}
-      </span>
+      <div class="panel-header-actions">
+        <button
+          v-if="availableGames.length > 0"
+          type="button"
+          class="create-btn"
+          @click="createSlideOpen = true"
+        >
+          Создать игру
+        </button>
+        <span class="connection-badge" :class="{ connected: lobbyConnected }">
+          <span class="connection-dot" />
+          {{ lobbyConnected ? 'Онлайн' : 'Подключение...' }}
+        </span>
+      </div>
     </div>
 
     <div class="games-list">
@@ -25,27 +35,79 @@
       </TransitionGroup>
       <Transition name="fade">
         <div v-if="availableGames.length === 0" class="empty-state">
-          <span class="empty-icon" aria-hidden="true">&#x1F48E;</span>
-          <p class="empty-title">Пока нет открытых игр</p>
-          <p class="empty-text">
-            Создайте новую игру выше — после создания вы получите ссылку для приглашения соперника.
-          </p>
+          <button
+            type="button"
+            class="create-btn create-btn-center"
+            @click="createSlideOpen = true"
+          >
+            Создать игру
+          </button>
+          <p class="empty-hint">Создайте игру, чтобы пригласить соперника</p>
         </div>
       </Transition>
     </div>
+
+    <Teleport to="body">
+      <Transition name="slide-overlay">
+        <div
+          v-if="createSlideOpen"
+          class="create-slide-overlay"
+          aria-hidden="false"
+          @click="createSlideOpen = false"
+        >
+          <Transition name="slide-panel">
+            <div
+              v-if="createSlideOpen"
+              class="create-slide-panel"
+              role="dialog"
+              aria-modal="true"
+              @click.stop
+            >
+              <div class="create-slide-header">
+                <button
+                  type="button"
+                  class="create-slide-close"
+                  aria-label="Закрыть"
+                  @click="createSlideOpen = false"
+                >
+                  &#215;
+                </button>
+              </div>
+              <div class="create-slide-body">
+                <CreateGamePanel />
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </section>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useLobby } from '@/composables/useLobby';
+import CreateGamePanel from '@/components/home/CreateGamePanel.vue';
 
 const router = useRouter();
 const { games: availableGames, connected: lobbyConnected } = useLobby();
+const createSlideOpen = ref(false);
 
 function goToGame(gameId: string) {
   router.push(`/game/${gameId}`);
 }
+
+function onEscape(e: KeyboardEvent) {
+  if (e.key === 'Escape' && createSlideOpen.value) createSlideOpen.value = false;
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onEscape);
+});
+onUnmounted(() => {
+  document.removeEventListener('keydown', onEscape);
+});
 </script>
 
 <style scoped>
@@ -79,11 +141,50 @@ function goToGame(gameId: string) {
   margin-bottom: 8px;
 }
 
+.panel-header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .panel-header h2 {
   margin: 0;
   font-size: 1.2rem;
   font-weight: 700;
   color: var(--color-accent);
+}
+
+.create-btn {
+  padding: 8px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.create-btn:hover {
+  background: var(--color-accent-hover);
+  box-shadow: 0 4px 14px rgba(233, 69, 96, 0.4);
+  transform: translateY(-1px);
+}
+
+.create-btn-center {
+  display: block;
+  margin: 0 auto 12px;
+}
+
+.empty-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  text-align: center;
 }
 
 .connection-badge {
@@ -205,27 +306,102 @@ function goToGame(gameId: string) {
   border-radius: var(--radius-lg);
 }
 
-.empty-icon {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 2.5rem;
-  opacity: 0.6;
+/* Create-game slide (drawer) */
+.create-slide-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.5);
 }
 
-.empty-title {
-  margin: 0 0 8px;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
+.create-slide-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 360px;
+  overflow: hidden;
+  cursor: default;
+  background: var(--color-bg-secondary);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.3);
 }
 
-.empty-text {
-  max-width: 320px;
-  margin: 0;
-  margin-inline: auto;
-  font-size: 0.9rem;
-  line-height: 1.45;
+.create-slide-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.create-slide-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  font-size: 1.5rem;
+  line-height: 1;
   color: var(--color-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  transition:
+    color 0.2s ease,
+    background 0.2s ease;
+}
+
+.create-slide-close:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+}
+
+.create-slide-body {
+  flex: 1;
+  padding: 0;
+  overflow-y: auto;
+}
+
+.create-slide-body :deep(.create-panel) {
+  min-width: unset;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.create-slide-body :deep(.create-panel:hover) {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Slide overlay transition */
+.slide-overlay-enter-active,
+.slide-overlay-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.slide-overlay-enter-from,
+.slide-overlay-leave-to {
+  opacity: 0;
+}
+
+/* Slide panel transition */
+.slide-panel-enter-active,
+.slide-panel-leave-active {
+  transition: transform 0.3s var(--ease-out-expo);
+}
+
+.slide-panel-enter-from,
+.slide-panel-leave-to {
+  transform: translateX(100%);
 }
 
 .game-row-anim-enter-active,

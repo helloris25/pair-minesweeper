@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { createGame } from '@/api/games';
 
 export const PRESETS = {
@@ -9,6 +9,18 @@ export const PRESETS = {
 
 export type PresetKey = keyof typeof PRESETS;
 
+/** Размеры поля: 2×2 … 6×6 */
+export const GRID_SIZE_OPTIONS = [2, 3, 4, 5, 6] as const;
+
+/** Допустимые значения времени на ход (сек) для чипов */
+export const TURN_TIME_OPTIONS = [15, 30, 45, 60, 90, 120] as const;
+
+function oddNumbersUpTo(max: number): number[] {
+  const result: number[] = [];
+  for (let n = 1; n <= max; n += 2) result.push(n);
+  return result;
+}
+
 export function useCreateGameForm() {
   const gridSize = ref(5);
   const diamondsCount = ref(5);
@@ -16,6 +28,20 @@ export function useCreateGameForm() {
   const creating = ref(false);
   const createError = ref('');
   const presetActive = ref<PresetKey | null>('medium');
+
+  const diamondOptions = computed(() => {
+    const max = gridSize.value * gridSize.value - 1;
+    return oddNumbersUpTo(max);
+  });
+
+  watch(gridSize, (newSize) => {
+    const max = newSize * newSize - 1;
+    const options = oddNumbersUpTo(max);
+    const current = diamondsCount.value;
+    if (current > max || current % 2 === 0 || !options.includes(current)) {
+      diamondsCount.value = options[options.length - 1] ?? 1;
+    }
+  });
 
   function applyPreset(key: PresetKey) {
     const p = PRESETS[key];
@@ -86,6 +112,7 @@ export function useCreateGameForm() {
     gridSize,
     diamondsCount,
     turnTimeSeconds,
+    diamondOptions,
     presetActive,
     creating,
     createError,
