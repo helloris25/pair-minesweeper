@@ -9,6 +9,7 @@ export const GAME_CONFIG_DEFAULTS = {
   turnTimeSecondsMin: 5,
   turnTimeSecondsMax: 120,
   msPerSecond: 1000,
+  disconnectLossSeconds: 10,
 } as const;
 
 export interface GameConfig {
@@ -21,4 +22,5 @@ export interface GameConfig {
   turnTimeSecondsMin: number;
   turnTimeSecondsMax: number;
   msPerSecond: number;
+  disconnectLossSeconds: number;
 }

@@ -1,12 +1,7 @@
 <template>
   <Teleport to="body">
     <TransitionGroup name="toast" tag="div" class="toast-container">
-      <div
-        v-for="toast in toasts"
-        :key="toast.id"
-        class="toast"
-        :class="`toast--${toast.type}`"
-      >
+      <div v-for="toast in toasts" :key="toast.id" class="toast" :class="`toast--${toast.type}`">
         {{ toast.message }}
       </div>
     </TransitionGroup>
@@ -32,24 +27,32 @@ const { toasts } = useToast();
 }
 
 .toast {
+  max-width: 360px;
   padding: 12px 20px;
-  border-radius: var(--radius-md);
   font-size: 0.9rem;
   font-weight: 500;
   color: #fff;
   pointer-events: auto;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  max-width: 360px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.toast:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  transform: translateX(-2px);
 }
 
 .toast--info {
-  background: var(--color-info);
   color: var(--color-bg-primary);
+  background: var(--color-info);
 }
 
 .toast--success {
-  background: var(--color-success);
   color: var(--color-bg-primary);
+  background: var(--color-success);
 }
 
 .toast--error {
@@ -57,8 +60,8 @@ const { toasts } = useToast();
 }
 
 .toast--warning {
-  background: var(--color-warning);
   color: var(--color-bg-primary);
+  background: var(--color-warning);
 }
 
 .toast-enter-active,

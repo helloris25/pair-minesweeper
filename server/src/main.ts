@@ -24,7 +24,10 @@ async function bootstrap() {
   const host = config.get<string>('HOST') ?? DEFAULT_HOST;
   const corsOriginEnv = config.get<string>('CORS_ORIGIN');
   const corsOrigin = corsOriginEnv
-    ? corsOriginEnv.split(',').map((s) => s.trim()).filter(Boolean)
+    ? corsOriginEnv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
     : DEFAULT_CORS_ORIGINS;
 
   app.enableCors({

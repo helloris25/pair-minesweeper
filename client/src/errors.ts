@@ -6,6 +6,7 @@ export interface GameErrorPayload {
 
 /** Maps server error codes to user-facing messages (locale: RU). */
 export const ERROR_MESSAGES: Record<string, string> = {
+  INVALID_PAYLOAD: 'Неверные данные запроса',
   JOIN_NOT_FOUND: 'Игра не найдена',
   JOIN_FINISHED: 'Игра уже завершена',
   JOIN_ALREADY_STARTED: 'Игра уже началась',

@@ -1,3 +1,4 @@
+import { ValidationPipe, UsePipes, UseFilters } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -9,16 +10,20 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { LobbyService } from './lobby.service';
+import { GameIdDto } from './dto/game-id.dto';
+import { GameJoinDto } from './dto/game-join.dto';
+import { GameRejoinDto } from './dto/game-rejoin.dto';
+import { GameOpenDto } from './dto/game-open.dto';
+import { GameWsExceptionFilter } from './ws-exception.filter';
 import { SessionService } from './session.service';
 import { GameplayService } from './gameplay.service';
 import {
   Game,
   SECOND_PLAYER,
   GAME_STATUS,
-  PlayerToken,
-  CellRevealedPayload,
+  PlayerNumber,
   ERROR_CODE,
-  ErrorCode,
+  type ErrorCode,
 } from './interfaces/game.interface';
 import {
   GAME_EVENTS,
@@ -30,22 +35,13 @@ import { GameConfigService } from './config/game-config.service';
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
-const ERROR_CODE_TO_MESSAGE = {
-  [ERROR_CODE.JOIN_NOT_FOUND]: 'Game not found',
-  [ERROR_CODE.JOIN_FINISHED]: 'Game already finished',
-  [ERROR_CODE.JOIN_ALREADY_STARTED]: 'Game already started',
-  [ERROR_CODE.JOIN_CANNOT_JOIN]: 'Cannot join this game',
-  [ERROR_CODE.JOIN_CANNOT_REJOIN]: 'Cannot rejoin with this token',
-  [ERROR_CODE.CANCEL_FAILED]: 'Failed to cancel game',
-  [ERROR_CODE.GAME_NOT_FOUND]: 'Game not found',
-  [ERROR_CODE.GAME_NOT_IN_PROGRESS]: 'Game is not in progress',
-  [ERROR_CODE.NOT_IN_GAME]: 'You are not in this game',
-  [ERROR_CODE.NOT_YOUR_TURN]: 'Not your turn',
-  [ERROR_CODE.INVALID_CELL]: 'Invalid cell coordinates',
-  [ERROR_CODE.CELL_ALREADY_REVEALED]: 'Cell already revealed',
-} as const satisfies Record<ErrorCode, string>;
-
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
+
+const wsValidationPipe = new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+});
 
 @WebSocketGateway({
   cors: {
@@ -53,9 +49,17 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
     credentials: true,
   },
 })
+@UsePipes(wsValidationPipe)
+@UseFilters(GameWsExceptionFilter)
 export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server!: TypedServer;
+
+  /** gameId -> { playerNumber, timeoutId } for disconnect-loss timer (playing games only). */
+  private disconnectTimers = new Map<
+    Game['id'],
+    { playerNumber: PlayerNumber; timeoutId: ReturnType<typeof setTimeout> }
+  >();
 
   constructor(
     private readonly lobbyService: LobbyService,
@@ -68,7 +72,9 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
     this.gameplayService.setTurnTimeoutCallback((gameId: Game['id']) => {
       const result = this.gameplayService.handleTimeout(gameId);
       if (result) {
+        this.clearDisconnectTimer(gameId);
         this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, result);
+        this.lobbyService.deleteGame(gameId);
         this.invalidateAndBroadcastLobby();
       }
     });
@@ -86,8 +92,8 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
   }
 
   @SubscribeMessage(GAME_EVENTS.GAME_JOIN)
-  handleJoin(@ConnectedSocket() client: TypedSocket, @MessageBody() data: { gameId: Game['id'] }) {
-    const { gameId } = data;
+  handleJoin(@ConnectedSocket() client: TypedSocket, @MessageBody() data: GameJoinDto) {
+    const { gameId, browserId } = data;
     const game = this.lobbyService.getGameById(gameId);
 
     if (!game) {
@@ -105,10 +111,14 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
       return;
     }
 
-    const result = this.lobbyService.joinGame(gameId, client.id);
+    const result = this.lobbyService.joinGame(gameId, client.id, browserId);
     if (!result) {
       client.emit(GAME_EVENTS.GAME_UNAVAILABLE, { code: ERROR_CODE.JOIN_CANNOT_JOIN });
       return;
+    }
+
+    if (result.replacedSocketId) {
+      this.server.to(result.replacedSocketId).emit(GAME_EVENTS.GAME_PLAYER_REPLACED);
     }
 
     client.leave(this.gameConfig.getConfig().lobbyRoom);
@@ -133,27 +143,27 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
   }
 
   @SubscribeMessage(GAME_EVENTS.GAME_REJOIN)
-  handleRejoin(
-    @ConnectedSocket() client: TypedSocket,
-    @MessageBody()
-    data: {
-      gameId: Game['id'];
-      playerToken: PlayerToken;
-    },
-  ) {
+  handleRejoin(@ConnectedSocket() client: TypedSocket, @MessageBody() data: GameRejoinDto) {
     const { gameId, playerToken } = data;
 
-    const playerNumber = this.sessionService.rejoinGame(gameId, client.id, playerToken);
+    const result = this.sessionService.rejoinGame(gameId, client.id, playerToken);
 
-    if (playerNumber === null) {
+    if (result === null) {
       client.emit(GAME_EVENTS.GAME_UNAVAILABLE, {
         code: ERROR_CODE.JOIN_CANNOT_REJOIN,
       });
       return;
     }
 
+    const { playerNumber, replacedSocketId } = result;
+    if (replacedSocketId) {
+      this.server.to(replacedSocketId).emit(GAME_EVENTS.GAME_PLAYER_REPLACED);
+    }
+
     client.leave(this.gameConfig.getConfig().lobbyRoom);
     client.join(gameId);
+
+    this.clearDisconnectTimer(gameId);
 
     this.broadcastGameStateToAllPlayers(gameId);
     this.server.to(gameId).emit(GAME_EVENTS.GAME_PLAYER_RECONNECTED, {
@@ -162,10 +172,7 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
   }
 
   @SubscribeMessage(GAME_EVENTS.GAME_CANCEL)
-  handleCancel(
-    @ConnectedSocket() client: TypedSocket,
-    @MessageBody() data: { gameId: Game['id'] },
-  ) {
+  handleCancel(@ConnectedSocket() client: TypedSocket, @MessageBody() data: GameIdDto) {
     const { gameId } = data;
     const cancelled = this.lobbyService.cancelGame(gameId, client.id);
 
@@ -180,15 +187,7 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
   }
 
   @SubscribeMessage(GAME_EVENTS.GAME_OPEN)
-  handleOpen(
-    @ConnectedSocket() client: TypedSocket,
-    @MessageBody()
-    data: {
-      gameId: Game['id'];
-      row: CellRevealedPayload['row'];
-      col: CellRevealedPayload['col'];
-    },
-  ) {
+  handleOpen(@ConnectedSocket() client: TypedSocket, @MessageBody() data: GameOpenDto) {
     const { gameId, row, col } = data;
     const result = this.gameplayService.openCell(gameId, client.id, row, col);
 
@@ -199,16 +198,15 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
 
     this.server.to(gameId).emit(GAME_EVENTS.GAME_UPDATE, result.revealed);
     if (result.gameOver) {
+      this.clearDisconnectTimer(gameId);
       this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, result.gameOver);
+      this.lobbyService.deleteGame(gameId);
       this.invalidateAndBroadcastLobby();
     }
   }
 
   @SubscribeMessage(GAME_EVENTS.GAME_SURRENDER)
-  handleSurrender(
-    @ConnectedSocket() client: TypedSocket,
-    @MessageBody() data: { gameId: Game['id'] },
-  ) {
+  handleSurrender(@ConnectedSocket() client: TypedSocket, @MessageBody() data: GameIdDto) {
     const { gameId } = data;
     const result = this.gameplayService.surrenderGame(gameId, client.id);
 
@@ -217,7 +215,9 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
       return;
     }
 
+    this.clearDisconnectTimer(gameId);
     this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, result.payload);
+    this.lobbyService.deleteGame(gameId);
     this.invalidateAndBroadcastLobby();
   }
 
@@ -227,11 +227,43 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
       return;
     }
 
-    this.server.to(disconnectResult.gameId).emit(GAME_EVENTS.GAME_PLAYER_LEFT, {
-      playerNumber: disconnectResult.playerNumber,
+    const { gameId, playerNumber } = disconnectResult;
+    const game = this.lobbyService.getGameById(gameId);
+    if (game?.status === GAME_STATUS.waiting && game.players.size === 0) {
+      this.lobbyService.deleteGame(gameId);
+      this.invalidateAndBroadcastLobby();
+      return;
+    }
+    if (game?.status === GAME_STATUS.playing) {
+      this.clearDisconnectTimer(gameId);
+      const seconds = this.gameConfig.getConfig().disconnectLossSeconds;
+      this.server.to(gameId).emit(GAME_EVENTS.GAME_OPPONENT_DISCONNECTED, {
+        secondsUntilWin: seconds,
+      });
+      const timeoutId = setTimeout(() => {
+        this.disconnectTimers.delete(gameId);
+        const payload = this.gameplayService.handleDisconnectLoss(gameId, playerNumber);
+        if (payload) {
+          this.server.to(gameId).emit(GAME_EVENTS.GAME_OVER, payload);
+          this.lobbyService.deleteGame(gameId);
+          this.invalidateAndBroadcastLobby();
+        }
+      }, seconds * this.gameConfig.getConfig().msPerSecond);
+      this.disconnectTimers.set(gameId, { playerNumber, timeoutId });
+    }
+
+    this.server.to(gameId).emit(GAME_EVENTS.GAME_PLAYER_LEFT, {
+      playerNumber,
     });
-    // Invalidate lobby cache so deleted games (e.g. only player left) disappear from the list
     this.invalidateAndBroadcastLobby();
+  }
+
+  private clearDisconnectTimer(gameId: Game['id']): void {
+    const entry = this.disconnectTimers.get(gameId);
+    if (entry) {
+      clearTimeout(entry.timeoutId);
+      this.disconnectTimers.delete(gameId);
+    }
   }
 
   broadcastLobby() {
@@ -246,8 +278,7 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
   }
 
   private emitGameError(client: TypedSocket, result: { ok: false; error: ErrorCode }): void {
-    const message = ERROR_CODE_TO_MESSAGE[result.error] ?? ERROR_CODE.GAME_NOT_FOUND;
-    client.emit(GAME_EVENTS.GAME_ERROR, { message, code: result.error });
+    client.emit(GAME_EVENTS.GAME_ERROR, { code: result.error });
   }
 
   private broadcastGameStateToAllPlayers(gameId: Game['id']): void {

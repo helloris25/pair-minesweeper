@@ -5,10 +5,12 @@ import {
   PlayerNumber,
   ClientCell,
   GameStatePayload,
-  CellRevealedPayload,
+  OpenedCellResultPayload,
+  BuildRevealedPayloadParams,
   GameOverPayload,
   OpenCellResult,
   SurrenderResult,
+  ApplyOpenCellResult,
   FIRST_PLAYER,
   SECOND_PLAYER,
   SocketId,
@@ -17,6 +19,7 @@ import {
   GAME_OVER_REASON,
   ErrorCode,
   ERROR_CODE,
+  ErrorResult,
 } from './interfaces/game.interface';
 import { GameRepository, GAME_REPOSITORY } from './interfaces/game-repository.interface';
 import { GameConfigService } from './config/game-config.service';
@@ -51,30 +54,32 @@ export class GameplayService {
     }
   }
 
-  openCell(gameId: Game['id'], socketId: SocketId, row: number, col: number): OpenCellResult {
-    const validationResult = this.validateOpenCell(
-      this.gameRepository.get(gameId),
-      socketId,
-      row,
-      col,
-    );
+  /** row/col are normalized by the gateway pipe (GameOpenDto); service only validates domain rules. */
+  openCell(
+    gameId: Game['id'],
+    socketId: SocketId,
+    row: number,
+    col: number,
+  ): OpenCellResult | ErrorResult {
+    const game = this.gameRepository.get(gameId);
+    const validationResult = this.validateOpenCell(game, socketId, row, col);
     if (!validationResult.valid) {
       return { ok: false, error: validationResult.error };
     }
 
-    const game = validationResult.payload;
-    const playerNumber = game.players.get(socketId)!;
-    const cellOpenResult = this.applyOpenCell(game, row, col, playerNumber);
+    const validatedGame = validationResult.payload;
+    const playerNumber = validatedGame.players.get(socketId)!;
+    const cellOpenResult = this.applyOpenCell(validatedGame, row, col, playerNumber);
 
     if (cellOpenResult.completed) {
-      game.status = GAME_STATUS.finished;
+      validatedGame.status = GAME_STATUS.finished;
 
-      this.clearTurnTimer(game);
+      this.clearTurnTimer(validatedGame);
       this.invalidateGameState(gameId);
 
-      const winner = this.getWinner(game);
+      const winner = this.getWinner(validatedGame);
       const revealed = this.buildRevealedPayload({
-        game,
+        game: validatedGame,
         row,
         col,
         cell: cellOpenResult.cell,
@@ -82,29 +87,31 @@ export class GameplayService {
         turnStartedAt: null,
       });
 
+      const gameOverPayload = this.buildGameOverPayload(validatedGame.scores, winner, 'completed');
+      validatedGame.lastGameOverPayload = gameOverPayload;
       return {
         ok: true,
         revealed,
-        gameOver: this.buildGameOverPayload(game.scores, winner, 'completed'),
+        gameOver: gameOverPayload,
       };
     }
 
     this.invalidateGameState(gameId);
-    this.startTurnTimer(game);
+    this.startTurnTimer(validatedGame);
 
     const revealed = this.buildRevealedPayload({
-      game,
+      game: validatedGame,
       row,
       col,
       cell: cellOpenResult.cell,
       extraTurn: cellOpenResult.extraTurn,
-      turnStartedAt: game.turnStartedAt,
+      turnStartedAt: validatedGame.turnStartedAt,
     });
 
     return { ok: true, revealed };
   }
 
-  surrenderGame(gameId: Game['id'], socketId: SocketId): SurrenderResult {
+  surrenderGame(gameId: Game['id'], socketId: SocketId): SurrenderResult | ErrorResult {
     const validation = this.validateGameAndPlayer(this.gameRepository.get(gameId), socketId, {
       requirePlaying: true,
     });
@@ -119,10 +126,11 @@ export class GameplayService {
     this.invalidateGameState(gameId);
 
     const winner = this.getOtherPlayer(playerNumber);
-
+    const payload = this.buildGameOverPayload(game.scores, winner, GAME_OVER_REASON.surrender);
+    game.lastGameOverPayload = payload;
     return {
       ok: true,
-      payload: this.buildGameOverPayload(game.scores, winner, GAME_OVER_REASON.surrender),
+      payload,
     };
   }
 
@@ -141,8 +149,31 @@ export class GameplayService {
 
     const loser = game.currentTurn;
     const winner = this.getOtherPlayer(loser);
+    const payload = this.buildGameOverPayload(game.scores, winner, GAME_OVER_REASON.timeout);
+    game.lastGameOverPayload = payload;
+    return payload;
+  }
 
-    return this.buildGameOverPayload(game.scores, winner, GAME_OVER_REASON.timeout);
+  /**
+   * Called when a player has been disconnected for too long (e.g. 10s). That player
+   * loses, the other wins. Returns null if the game is already finished or missing.
+   */
+  handleDisconnectLoss(
+    gameId: Game['id'],
+    disconnectedPlayerNumber: PlayerNumber,
+  ): GameOverPayload | null {
+    const game = this.gameRepository.get(gameId);
+    if (!game || game.status !== GAME_STATUS.playing) {
+      return null;
+    }
+
+    game.status = GAME_STATUS.finished;
+    this.clearTurnTimer(game);
+    this.invalidateGameState(gameId);
+    const winner = this.getOtherPlayer(disconnectedPlayerNumber);
+    const payload = this.buildGameOverPayload(game.scores, winner, GAME_OVER_REASON.disconnect);
+    game.lastGameOverPayload = payload;
+    return payload;
   }
 
   getStateForPlayer(gameId: Game['id'], socketId: SocketId): GameStatePayload | null {
@@ -245,8 +276,8 @@ export class GameplayService {
   private validateOpenCell(
     game: Game | undefined,
     socketId: SocketId,
-    row: CellRevealedPayload['row'],
-    col: CellRevealedPayload['col'],
+    row: OpenedCellResultPayload['row'],
+    col: OpenedCellResultPayload['col'],
   ): ValidationResult<Game> {
     const validationResult = this.validateGameAndPlayer(game, socketId, { requirePlaying: true });
     if (!validationResult.valid) {
@@ -272,10 +303,10 @@ export class GameplayService {
 
   private applyOpenCell(
     game: Game,
-    row: CellRevealedPayload['row'],
-    col: CellRevealedPayload['col'],
+    row: OpenedCellResultPayload['row'],
+    col: OpenedCellResultPayload['col'],
     playerNumber: PlayerNumber,
-  ): { extraTurn: boolean; completed: boolean; cell: Cell } {
+  ): ApplyOpenCellResult {
     const cell = game.board[row][col];
     cell.revealed = true;
     cell.revealedBy = playerNumber;
@@ -322,14 +353,7 @@ export class GameplayService {
     };
   }
 
-  private buildRevealedPayload(params: {
-    game: Game;
-    row: CellRevealedPayload['row'];
-    col: CellRevealedPayload['col'];
-    cell: Cell;
-    extraTurn: CellRevealedPayload['extraTurn'];
-    turnStartedAt: Game['turnStartedAt'];
-  }): CellRevealedPayload {
+  private buildRevealedPayload(params: BuildRevealedPayloadParams): OpenedCellResultPayload {
     const { game, row, col, cell, extraTurn, turnStartedAt } = params;
 
     return {

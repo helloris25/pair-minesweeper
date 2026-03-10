@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Cell, CellRevealedPayload, Game } from './interfaces/game.interface';
+import { Cell, OpenedCellResultPayload, Game } from './interfaces/game.interface';
 import { IBoardGenerator } from './interfaces/board-generator.interface';
 import { isCellInBounds } from './utils/board.util';
 
@@ -80,8 +80,8 @@ export class BoardGeneratorService implements IBoardGenerator {
   private countNeighborDiamonds(
     board: Cell[][],
     gridSize: Game['gridSize'],
-    row: CellRevealedPayload['row'],
-    col: CellRevealedPayload['col'],
+    row: OpenedCellResultPayload['row'],
+    col: OpenedCellResultPayload['col'],
   ): number {
     let count = 0;
 
@@ -103,8 +103,8 @@ export class BoardGeneratorService implements IBoardGenerator {
 
   private getCellIndex(
     gridSize: Game['gridSize'],
-    row: CellRevealedPayload['row'],
-    col: CellRevealedPayload['col'],
+    row: OpenedCellResultPayload['row'],
+    col: OpenedCellResultPayload['col'],
   ): number {
     return row * gridSize + col;
   }

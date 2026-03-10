@@ -36,7 +36,7 @@ export interface CellRevealedPayload {
 export interface GameOverPayload {
   scores: Record<PlayerNumber, number>;
   winner: PlayerNumber | null;
-  reason?: 'completed' | 'surrender' | 'timeout';
+  reason?: 'completed' | 'surrender' | 'timeout' | 'disconnect';
 }
 
 export interface AvailableGameInfo {

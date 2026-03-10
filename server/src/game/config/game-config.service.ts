@@ -52,6 +52,10 @@ export class GameConfigService {
         this.configService.get<string>('GAME_MS_PER_SECOND'),
         defaults.msPerSecond,
       ),
+      disconnectLossSeconds: parseIntegerFromEnv(
+        this.configService.get<string>('GAME_DISCONNECT_LOSS_SECONDS'),
+        defaults.disconnectLossSeconds,
+      ),
     };
   }
 

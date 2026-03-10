@@ -2,18 +2,19 @@ import { Inject, Injectable, BadRequestException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import {
   Game,
-  Cell,
   PlayerNumber,
   AvailableGameInfo,
+  JoinGameResult,
+  BuildGameEntityParams,
   FIRST_PLAYER,
   SECOND_PLAYER,
   GAME_STATUS,
-  PlayerToken,
   SocketId,
 } from './interfaces/game.interface';
 import { GameRepository, GAME_REPOSITORY } from './interfaces/game-repository.interface';
 import { IBoardGenerator, BOARD_GENERATOR } from './interfaces/board-generator.interface';
 import { GameConfigService } from './config/game-config.service';
+import { getMapKeyByValue } from './utils/map.util';
 
 @Injectable()
 export class LobbyService {
@@ -26,12 +27,10 @@ export class LobbyService {
     private readonly gameConfig: GameConfigService,
   ) {}
 
-  /** Call when the set of waiting games may have changed (so next listAvailableGames recomputes). */
   invalidateLobbyCache(): void {
     this.lobbyListDirty = true;
   }
 
-  /** Creates a new game with the given parameters and stores it. */
   createGame(
     gridSize: Game['gridSize'],
     diamondsCount: Game['diamondsCount'],
@@ -75,7 +74,6 @@ export class LobbyService {
     return this.gameRepository.get(gameId);
   }
 
-  /** Lists games waiting for a second player; removes expired non-playing games. */
   listAvailableGames(): AvailableGameInfo[] {
     if (!this.lobbyListDirty) {
       return this.cachedLobbyList;
@@ -108,25 +106,24 @@ export class LobbyService {
 
     this.cachedLobbyList = result;
     this.lobbyListDirty = false;
+
     return result;
   }
 
-  /** Adds a player to a waiting game. Returns null if game is full or missing. */
-  joinGame(
-    gameId: Game['id'],
-    socketId: SocketId,
-  ): {
-    playerNumber: PlayerNumber;
-    playerToken: PlayerToken;
-    gameStarted: boolean;
-  } | null {
+  joinGame(gameId: Game['id'], socketId: SocketId, browserId?: string): JoinGameResult | null {
     const game = this.gameRepository.get(gameId);
     if (!game) {
       return null;
     }
+
     const { maxPlayers } = this.gameConfig.getConfig();
     if (game.players.size >= maxPlayers) {
       return null;
+    }
+
+    const replaceResult = this.tryReplaceFirstPlayerSocket(game, socketId, browserId);
+    if (replaceResult !== null) {
+      return replaceResult;
     }
 
     const playerNumber: PlayerNumber = game.playerTokens.size === 0 ? FIRST_PLAYER : SECOND_PLAYER;
@@ -134,6 +131,15 @@ export class LobbyService {
 
     game.players.set(socketId, playerNumber);
     game.playerTokens.set(playerToken, playerNumber);
+
+    if (!game.playerBrowserIds) {
+      game.playerBrowserIds = new Map();
+    }
+
+    if (browserId) {
+      game.playerBrowserIds.set(playerNumber, browserId);
+    }
+
     this.gameRepository.registerSocket(socketId, gameId, playerNumber);
 
     const gameStarted = game.playerTokens.size === maxPlayers;
@@ -145,6 +151,40 @@ export class LobbyService {
     return { playerNumber, playerToken, gameStarted };
   }
 
+  private tryReplaceFirstPlayerSocket(
+    game: Game,
+    socketId: SocketId,
+    browserId: string | undefined,
+  ): JoinGameResult | null {
+    if (game.players.size !== 1 || !browserId) {
+      return null;
+    }
+
+    const playerBrowserIds = game.playerBrowserIds ?? new Map<PlayerNumber, string>();
+    if (playerBrowserIds.get(FIRST_PLAYER) !== browserId) {
+      return null;
+    }
+
+    const oldSocketId = getMapKeyByValue(game.players, FIRST_PLAYER);
+    const existingToken = getMapKeyByValue(game.playerTokens, FIRST_PLAYER);
+    const isReplacement = oldSocketId === undefined || existingToken === undefined;
+    if (isReplacement) {
+      return null;
+    }
+
+    game.players.delete(oldSocketId);
+    this.gameRepository.unregisterSocket(oldSocketId);
+    game.players.set(socketId, FIRST_PLAYER);
+    this.gameRepository.registerSocket(socketId, game.id, FIRST_PLAYER);
+
+    return {
+      playerNumber: FIRST_PLAYER,
+      playerToken: existingToken,
+      gameStarted: false,
+      replacedSocketId: oldSocketId,
+    };
+  }
+
   cancelGame(gameId: Game['id'], socketId: SocketId): boolean {
     const game = this.gameRepository.get(gameId);
     if (!game || game.status !== GAME_STATUS.waiting || !game.players.has(socketId)) {
@@ -153,6 +193,7 @@ export class LobbyService {
 
     this.gameRepository.delete(gameId);
     this.invalidateLobbyCache();
+
     return true;
   }
 
@@ -166,17 +207,13 @@ export class LobbyService {
     if (!game) {
       return [];
     }
+
     return Array.from(game.players.keys());
   }
 
-  private buildGameEntity(params: {
-    gameId: Game['id'];
-    gridSize: Game['gridSize'];
-    diamondsCount: Game['diamondsCount'];
-    turnTimeSeconds: Game['turnTimeSeconds'];
-    board: Cell[][];
-  }): Game {
+  private buildGameEntity(params: BuildGameEntityParams): Game {
     const { gameId, gridSize, diamondsCount, turnTimeSeconds, board } = params;
+
     return {
       id: gameId,
       gridSize,
@@ -185,6 +222,7 @@ export class LobbyService {
       board,
       players: new Map(),
       playerTokens: new Map(),
+      playerBrowserIds: new Map(),
       currentTurn: FIRST_PLAYER,
       scores: {
         [FIRST_PLAYER]: 0,

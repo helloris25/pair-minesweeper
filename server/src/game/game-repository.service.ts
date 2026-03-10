@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Game, PlayerNumber, SocketId } from './interfaces/game.interface';
+import { Game, FindGameAndPlayerResult, PlayerNumber, SocketId } from './interfaces/game.interface';
 import { GameRepository as GameRepository } from './interfaces/game-repository.interface';
 
 @Injectable()
@@ -25,16 +25,11 @@ export class GameRepositoryService implements GameRepository {
     this.games.delete(gameId);
   }
 
-  /** Returns all [gameId, game] pairs for iteration and cleanup. */
   getEntries(): [Game['id'], Game][] {
     return Array.from(this.games.entries());
   }
 
-  findGameAndPlayerBySocketId(socketId: SocketId): {
-    gameId: Game['id'];
-    game: Game;
-    playerNumber: PlayerNumber;
-  } | null {
+  findGameAndPlayerBySocketId(socketId: SocketId): FindGameAndPlayerResult | null {
     const socketEntry = this.socketIndex.get(socketId);
     if (!socketEntry) {
       return null;
