@@ -138,8 +138,8 @@ export class GameGateway implements OnGatewayDisconnect, OnGatewayInit {
       this.server.to(gameId).emit(GAME_EVENTS.GAME_PLAYER_JOINED, {
         playerNumber: SECOND_PLAYER,
       });
-      this.broadcastLobby();
     }
+    this.broadcastLobby();
   }
 
   @SubscribeMessage(GAME_EVENTS.GAME_REJOIN)

@@ -150,8 +150,8 @@ export class LobbyService {
     const gameStarted = game.playerTokens.size === maxPlayers;
     if (gameStarted) {
       game.status = GAME_STATUS.playing;
-      this.invalidateLobbyCache();
     }
+    this.invalidateLobbyCache();
 
     return { playerNumber, playerToken, gameStarted };
   }
@@ -180,6 +180,7 @@ export class LobbyService {
 
     game.players.set(socketId, FIRST_PLAYER);
     this.gameRepository.registerSocket(socketId, game.id, FIRST_PLAYER);
+    this.invalidateLobbyCache();
 
     return {
       playerNumber: FIRST_PLAYER,
