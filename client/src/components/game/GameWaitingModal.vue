@@ -3,12 +3,7 @@
     <span class="waiting-hint-text">Ожидание второго игрока — пригласите по ссылке ниже</span>
   </div>
   <div class="game-center-viewport game-center-with-overlay">
-    <GameBoard
-      :board="board"
-      :grid-size="gridSize"
-      :can-click="false"
-      @cell-click="() => {}"
-    />
+    <GameBoard :board="board" :grid-size="gridSize" :can-click="false" @cell-click="() => {}" />
     <div class="waiting-backdrop" aria-hidden="true" />
     <div
       class="waiting-modal animate-in"

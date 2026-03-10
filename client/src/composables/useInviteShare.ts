@@ -11,9 +11,7 @@ export function useInviteShare(gameId: string) {
     return `${window.location.origin}/game/${gameId}`;
   });
 
-  const canShare = ref(
-    typeof navigator !== 'undefined' && typeof navigator.share === 'function',
-  );
+  const canShare = ref(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
 
   async function copyGameId() {
     const url = `${window.location.origin}/game/${gameId}`;

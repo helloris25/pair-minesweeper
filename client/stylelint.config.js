@@ -1,9 +1,6 @@
 /** @type {import('stylelint').Config} */
 export default {
-  extends: [
-    'stylelint-config-standard-vue',
-    'stylelint-config-recess-order',
-  ],
+  extends: ['stylelint-config-standard-vue', 'stylelint-config-recess-order'],
   overrides: [
     {
       files: ['**/*.vue'],

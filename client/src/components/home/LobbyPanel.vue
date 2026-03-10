@@ -20,9 +20,7 @@
           <span class="game-board-size">{{ game.gridSize }}×{{ game.gridSize }}</span>
           <span class="game-diamonds">{{ game.diamondsCount }} &#x1F48E;</span>
           <span class="game-turn-time">{{ game.turnTimeSeconds }} сек</span>
-          <button type="button" class="join-btn" @click="goToGame(game.id)">
-            Играть
-          </button>
+          <button type="button" class="join-btn" @click="goToGame(game.id)">Играть</button>
         </div>
       </TransitionGroup>
       <Transition name="fade">
@@ -30,8 +28,7 @@
           <span class="empty-icon" aria-hidden="true">&#x1F48E;</span>
           <p class="empty-title">Пока нет открытых игр</p>
           <p class="empty-text">
-            Создайте новую игру выше — после создания вы получите ссылку для приглашения
-            соперника.
+            Создайте новую игру выше — после создания вы получите ссылку для приглашения соперника.
           </p>
         </div>
       </Transition>

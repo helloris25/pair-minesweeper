@@ -12,9 +12,7 @@
       <div v-else-if="playerLeft" key="reconnect" class="alert-banner alert-reconnect">
         Соперник переподключается…
       </div>
-      <div v-else-if="extraTurn" key="bonus" class="alert-banner alert-bonus">
-        Бонусный ход!
-      </div>
+      <div v-else-if="extraTurn" key="bonus" class="alert-banner alert-bonus">Бонусный ход!</div>
       <div v-else key="empty" class="alert-placeholder" aria-hidden="true" />
     </Transition>
   </div>

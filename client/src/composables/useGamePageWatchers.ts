@@ -3,8 +3,7 @@ import { onBeforeRouteLeave } from 'vue-router';
 import type { useRouter } from 'vue-router';
 import type { GameStatePayload } from '@/types/game';
 
-const LEAVE_MESSAGE =
-  'Выйти со страницы игры? Если вы единственный игрок, игра будет завершена.';
+const LEAVE_MESSAGE = 'Выйти со страницы игры? Если вы единственный игрок, игра будет завершена.';
 
 export interface GamePageSocketRefs {
   gameState: Ref<GameStatePayload | null>;

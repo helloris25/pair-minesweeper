@@ -30,12 +30,8 @@
           <p class="final-score">
             Игрок 1: {{ gameOver.scores[1] }} &mdash; Игрок 2: {{ gameOver.scores[2] }}
           </p>
-          <p v-if="gameOver.winner === playerNumber" class="result-win">
-            Вы победили!
-          </p>
-          <p v-else-if="gameOver.winner" class="result-lose">
-            Игрок {{ gameOver.winner }} победил
-          </p>
+          <p v-if="gameOver.winner === playerNumber" class="result-win">Вы победили!</p>
+          <p v-else-if="gameOver.winner" class="result-lose">Игрок {{ gameOver.winner }} победил</p>
           <p v-else class="result-draw">Ничья!</p>
         </template>
 
@@ -53,7 +49,7 @@ defineProps<{
   playerNumber: PlayerNumber;
 }>();
 
-defineEmits<{ 'goHome': [] }>();
+defineEmits<{ goHome: [] }>();
 </script>
 
 <style scoped>

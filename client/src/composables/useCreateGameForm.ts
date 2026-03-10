@@ -30,7 +30,11 @@ export function useCreateGameForm() {
     const g = gridSize.value;
     const d = diamondsCount.value;
     const t = turnTimeSeconds.value;
-    if (g === PRESETS.fast.gridSize && d === PRESETS.fast.diamondsCount && t === PRESETS.fast.turnTimeSeconds) {
+    if (
+      g === PRESETS.fast.gridSize &&
+      d === PRESETS.fast.diamondsCount &&
+      t === PRESETS.fast.turnTimeSeconds
+    ) {
       presetActive.value = 'fast';
     } else if (
       g === PRESETS.medium.gridSize &&
